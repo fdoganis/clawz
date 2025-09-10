@@ -7,111 +7,60 @@ import {
   AmbientLight,
   BoxGeometry,
   Clock,
-  Color,
   CylinderGeometry,
   HemisphereLight,
   Mesh,
-  MeshNormalMaterial,
+  MeshBasicMaterial,
   MeshPhongMaterial,
   PerspectiveCamera,
+  PlaneGeometry,
   Scene,
   WebGLRenderer
-} from "https://js13kgames.com/2025/webxr/three.module.js";
+} from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js"; //} from "https://js13kgames.com/2025/webxr/three.module.js";
 
-// XR Emulator
-// import { DevUI } from '@iwer/devui';
-// import { XRDevice, metaQuest3 } from 'iwer';
-
+// TODO: FIXME: include proper link in final version
+// Oh no!!! Emulators are KO in THREE.js 179 !
+// OK in 178 and 180
 // XR
 //import { XRButton } from 'three/addons/webxr/XRButton.js';
 import { XRButton } from './XRButton.js';
 
-// If you prefer to import the whole library, with the THREE prefix, use the following line instead:
-// import * as THREE from 'three'
 
-// NOTE: three/addons alias is supported by Rollup: you can use it interchangeably with three/examples/jsm/  
-
-// Importing Ammo can be tricky.
-// Vite supports webassembly: https://vitejs.dev/guide/features.html#webassembly
-// so in theory this should work:
-//
-// import ammoinit from 'three/addons/libs/ammo.wasm.js?init';
-// ammoinit().then((AmmoLib) => {
-//  Ammo = AmmoLib.exports.Ammo()
-// })
-//
-// But the Ammo lib bundled with the THREE js examples does not seem to export modules properly.
-// A solution is to treat this library as a standalone file and copy it using 'vite-plugin-static-copy'.
-// See vite.config.js
-// 
-// Consider using alternatives like Oimo or cannon-es
-// import {
-//   OrbitControls
-// } from 'three/addons/controls/OrbitControls.js';
-
-// import {
-//   GLTFLoader
-// } from 'three/addons/loaders/GLTFLoader.js';
-
-// Example of hard link to official repo for data, if needed
-// const MODEL_PATH = 'https://raw.githubusercontent.com/mrdoob/three.js/r173/examples/models/gltf/LeePerrySmith/LeePerrySmith.glb';
-
-// async function setupXR(xrMode) {
-
-//   if (xrMode !== 'immersive-vr') return;
-
-//   // iwer setup: emulate vr session
-//   let nativeWebXRSupport = false;
-//   if (navigator.xr) {
-//     nativeWebXRSupport = await navigator.xr.isSessionSupported(xrMode);
-//   }
-
-//   if (!nativeWebXRSupport) {
-//     const xrDevice = new XRDevice(metaQuest3);
-//     xrDevice.installRuntime();
-//     xrDevice.fovy = (75 / 180) * Math.PI;
-//     xrDevice.ipd = 0;
-//     window.xrdevice = xrDevice;
-//     xrDevice.controllers.right.position.set(0.15649, 1.43474, -0.38368);
-//     xrDevice.controllers.right.quaternion.set(
-//       0.14766305685043335,
-//       0.02471366710960865,
-//       -0.0037767395842820406,
-//       0.9887216687202454,
-//     );
-//     xrDevice.controllers.left.position.set(-0.15649, 1.43474, -0.38368);
-//     xrDevice.controllers.left.quaternion.set(
-//       0.14766305685043335,
-//       0.02471366710960865,
-//       -0.0037767395842820406,
-//       0.9887216687202454,
-//     );
-//     new DevUI(xrDevice);
-//   }
-// }
-
-// await setupXR('immersive-ar');
-
-
-
-// INSERT CODE HERE
 let camera, scene, renderer;
 let controller;
-
+const cubes = [];
+const collidableMeshList = [];
 
 const clock = new Clock();
 
 // Main loop
-const animate = () => {
+const gameLoop = () => {
 
   const delta = clock.getDelta();
   const elapsed = clock.getElapsedTime();
 
+  animateCubes(delta);
+
   // can be used in shaders: uniforms.u_time.value = elapsed;
+
 
   renderer.render(scene, camera);
 };
 
+
+
+const CUBE_ANIMATION_SPEED = 25;
+const animateCubes = (delta) => {
+  cubes.forEach((c) => {
+    if (c.userData.active) {
+      c.position.z += CUBE_ANIMATION_SPEED * delta;
+
+      if (c.position.z > 10) {
+        resetCube(c);
+      }
+    }
+  })
+}
 
 const init = () => {
   scene = new Scene();
@@ -127,10 +76,15 @@ const init = () => {
   hemiLight.position.set(0.5, 1, 0.25);
   scene.add(hemiLight);
 
+  window.addEventListener('resize', onWindowResize, false);
+
+}
+
+const initXR = () => {
   renderer = new WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setAnimationLoop(animate); // requestAnimationFrame() replacement, compatible with XR 
+  renderer.setAnimationLoop(gameLoop); // requestAnimationFrame() replacement, compatible with XR 
   renderer.xr.enabled = true;
   document.body.appendChild(renderer.domElement);
 
@@ -152,59 +106,84 @@ const init = () => {
 
   // Handle input: see THREE.js webxr_ar_cones
 
-  const geometry = new CylinderGeometry(0, 0.05, 0.2, 32).rotateX(Math.PI / 2);
+  // const geometry = new CylinderGeometry(0, 0.05, 0.2, 32).rotateX(Math.PI / 2);
 
-  const onSelect = (event) => {
+  // const onSelect = (event) => {
 
-    const material = new MeshPhongMaterial({ color: 0xffffff * Math.random() });
-    const mesh = new Mesh(geometry, material);
-    mesh.position.set(0, 0, - 0.3).applyMatrix4(controller.matrixWorld);
-    mesh.quaternion.setFromRotationMatrix(controller.matrixWorld);
-    scene.add(mesh);
+  //   const material = new MeshPhongMaterial({ color: 0xffffff * Math.random() });
+  //   const mesh = new Mesh(geometry, material);
+  //   mesh.position.set(0, 0, - 0.3).applyMatrix4(controller.matrixWorld);
+  //   mesh.quaternion.setFromRotationMatrix(controller.matrixWorld);
+  //   scene.add(mesh);
 
+  // }
+
+  // controller = renderer.xr.getController(0);
+  // controller.addEventListener('select', onSelect);
+  // scene.add(controller);
+}
+
+
+// TODO: find alternative to wireframe (displays trinagles) and Edges Geometry only one huge quad)
+// Ideally we'd like to have quads.
+const initFloor = () => {
+
+  const floor = new Mesh(
+    new PlaneGeometry(3, 3, 30, 30),
+    new MeshBasicMaterial({
+      color: 0x008800,
+      wireframe: true
+    })
+  );
+  floor.rotation.x = Math.PI / -2;
+  floor.position.y = -0.001;
+
+  scene.add(floor);
+
+}
+
+const initCubes = () => {
+
+  const boxGeometry = new BoxGeometry(0.25, 0.25, 0.25);
+  const boxMaterial = new MeshBasicMaterial({ color: 0x00ff00 });
+
+  for (let i = 0; i < 5; i++) {
+
+    cubes.push(new Mesh(boxGeometry, boxMaterial));
+
+    const curCube = cubes[i];
+    resetCube(curCube);
+
+    curCube.userData.type = 'cube';
+    collidableMeshList.push(curCube);
+    scene.add(curCube);
   }
 
-  controller = renderer.xr.getController(0);
-  controller.addEventListener('select', onSelect);
-  scene.add(controller);
+  scheduleCubesRespawn();
 
-
-  window.addEventListener('resize', onWindowResize, false);
 
 }
 
-init();
-
-//
-
-/*
-function loadData() {
-  new GLTFLoader()
-    .setPath('assets/models/')
-    .load('test.glb', gltfReader);
+const resetCube = (cube) => {
+  cube.visible = false;
+  cube.userData.active = false;
+  cube.position.z = -100;
+  cube.position.x = Math.random() * 2 - 0.5;
+  cube.position.y = Math.random() * 1 + 0.5;
 }
 
+const scheduleCubesRespawn = () => {
+  setInterval(() => {
+    for (let i = 0; i < 5; i++) {
+      if (cubes[i].userData.active === false) {
+        cubes[i].userData.active = true
+        cubes[i].visible = true
+        break
+      }
+    }
+  }, 250 * 100 / CUBE_ANIMATION_SPEED)
 
-function gltfReader(gltf) {
-  let testModel = null;
-
-  testModel = gltf.scene;
-
-  if (testModel != null) {
-    console.log("Model loaded:  " + testModel);
-    scene.add(gltf.scene);
-  } else {
-    console.log("Load FAILED.  ");
-  }
 }
-
-loadData();
-*/
-
-
-// camera.position.z = 3;
-
-
 
 
 function onWindowResize() {
@@ -215,3 +194,10 @@ function onWindowResize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
 
 }
+
+////
+
+init();
+initXR();
+initFloor();
+initCubes();
