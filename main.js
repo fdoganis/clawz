@@ -8,6 +8,7 @@ import {
   BoxGeometry,
   Clock,
   CylinderGeometry,
+  Fog,
   HemisphereLight,
   Mesh,
   MeshBasicMaterial,
@@ -30,6 +31,15 @@ let camera, scene, renderer;
 let controller;
 const cubes = [];
 const collidableMeshList = [];
+
+// Palette
+var COLORS = {
+  RED: 0xc84231,
+  GREEN: 0x7cbc70,
+  BLUE: 0x1c9ec3,
+  MAGENTA: 0xae4c9d,
+  YELLOW: 0xfcc245
+};
 
 const clock = new Clock();
 
@@ -64,6 +74,8 @@ const animateCubes = (delta) => {
 
 const init = () => {
   scene = new Scene();
+
+  scene.fog = new Fog(0xffffff, 2, 10);
 
   const aspect = window.innerWidth / window.innerHeight;
   camera = new PerspectiveCamera(75, aspect, 0.1, 10); // meters
@@ -131,7 +143,7 @@ const initFloor = () => {
   const floor = new Mesh(
     new PlaneGeometry(3, 3, 30, 30),
     new MeshBasicMaterial({
-      color: 0x008800,
+      color: COLORS.MAGENTA,
       wireframe: true
     })
   );
@@ -145,11 +157,10 @@ const initFloor = () => {
 const initCubes = () => {
 
   const boxGeometry = new BoxGeometry(0.25, 0.25, 0.25);
-  const boxMaterial = new MeshBasicMaterial({ color: 0x00ff00 });
 
   for (let i = 0; i < 5; i++) {
 
-    cubes.push(new Mesh(boxGeometry, boxMaterial));
+    cubes.push(new Mesh(boxGeometry, new MeshBasicMaterial({ color: COLORS.BLUE })));
 
     const curCube = cubes[i];
     resetCube(curCube);
