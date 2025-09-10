@@ -1,0 +1,26 @@
+{
+  "name": "three_vite_xr_js13k",
+  "version": "0.0.5",
+  "author": "fdoganis",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "clean": "rm -rf dist; rm -f dist.zip",
+    "purge": "npm run clean && rm -rf node_modules",
+    "serve": "http-server dist",
+    "cloud": "cloudflared tunnel --url http://localhost:5173/",
+    "zip": "rm -f dist.zip; cd dist; zip -r ../dist.zip .; cd ..; if [ $(wc -c < dist.zip) -ge 13312 ]; then echo \"*** ERROR *** : APP BUNDLE TOO BIG !!!\"; fi; wc -c dist.zip"
+  },
+  "devDependencies": {
+    "@types/three": "^0.179.0",
+    "http-server": "^14.1.1",
+    "vite": "^6.3.5",
+    "vite-plugin-glsl": "^0.4.0",
+    "vite-plugin-static-copy": "^2.3.2"
+  },
+  "overrides": {},
+  "dependencies": {}
+}
