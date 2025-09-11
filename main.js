@@ -8,14 +8,17 @@ import {
   BoxGeometry,
   Clock,
   CylinderGeometry,
+  DirectionalLight,
   Fog,
   HemisphereLight,
   Mesh,
   MeshBasicMaterial,
   MeshPhongMaterial,
+  PCFSoftShadowMap,
   PerspectiveCamera,
   PlaneGeometry,
   Scene,
+  ShadowMaterial,
   WebGLRenderer
 } from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js"; //} from "https://js13kgames.com/2025/webxr/three.module.js";
 
@@ -81,8 +84,19 @@ const init = () => {
   camera = new PerspectiveCamera(75, aspect, 0.1, 10); // meters
   camera.position.set(0, 1.6, 3);
 
+  // Lights
   const light = new AmbientLight(0xffffff, 1.0); // soft white light
   scene.add(light);
+
+  const dirLight = new DirectionalLight(0xffffff, 1);
+  dirLight.position.set(10, 10, 10);
+  dirLight.castShadow = true;
+  dirLight.shadow.mapSize.width = 1024;
+  dirLight.shadow.mapSize.height = 1024;
+  scene.add(dirLight);
+
+  // const ambientLight = new AmbientLight(0x404040);
+  // scene.add(ambientLight);
 
   const hemiLight = new HemisphereLight(0xffffff, 0xbbbbff, 3);
   hemiLight.position.set(0.5, 1, 0.25);
@@ -96,6 +110,11 @@ const initXR = () => {
   renderer = new WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
+
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = PCFSoftShadowMap;
+
+
   renderer.setAnimationLoop(gameLoop); // requestAnimationFrame() replacement, compatible with XR 
   renderer.xr.enabled = true;
   document.body.appendChild(renderer.domElement);
@@ -148,9 +167,19 @@ const initFloor = () => {
     })
   );
   floor.rotation.x = Math.PI / -2;
-  floor.position.y = -0.001;
+  floor.position.y = groundY - 0.001;
 
   scene.add(floor);
+
+  // Ground for shadows
+  // TODO: check AR Shadow
+  const groundMat = new ShadowMaterial({ opacity: 0.4 });
+  const groundGeo = new PlaneGeometry(3, 3);
+  const ground = new Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = groundY;
+  ground.receiveShadow = true;
+  scene.add(ground);
 
 }
 
@@ -167,6 +196,8 @@ const initCubes = () => {
 
     curCube.userData.type = 'cube';
     collidableMeshList.push(curCube);
+    curCube.castShadow = true;
+    curCube.receiveShadow = true;
     scene.add(curCube);
   }
 
