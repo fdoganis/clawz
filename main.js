@@ -29,13 +29,32 @@ import {
 //import { XRButton } from 'three/addons/webxr/XRButton.js';
 import { XRButton } from './XRButton.js';
 
+// Cube slicing code
+// https://github.com/mrdoob/three.js/blob/r179/examples/jsm/math/ConvexHull.js
+// https://github.com/mrdoob/three.js/blob/r179/examples/jsm/geometries/ConvexGeometry.js
+// https://github.com/mrdoob/three.js/blob/r179/examples/jsm/misc/ConvexObjectBreaker.js
+
+import { ConvexObjectBreaker } from './ConvexObjectBreaker.js';
+
+const objectBreaker = new ConvexObjectBreaker();
+const fallingPieces = [];
+let originalCube = null;
+
+const gravity = -9.81; // pseudo gravity acceleration (units per second^2)
+const groundY = 0.0; // ground level
+// const pieceColors = [
+//   0x1FB8CD, 0xFFC185, 0xB4413C, 0xECEBD5,
+//   0x5D878F, 0xDB4545, 0xD2BA4C, 0x964325
+// ];
+
+
 
 let camera, scene, renderer;
 let controller;
 const cubes = [];
 const collidableMeshList = [];
 
-// Palette
+// Palette inspired by Takenobu Igarashi
 var COLORS = {
   RED: 0xc84231,
   GREEN: 0x7cbc70,
@@ -56,6 +75,7 @@ const gameLoop = () => {
 
   // can be used in shaders: uniforms.u_time.value = elapsed;
 
+  updateCubePhysics(delta);
 
   renderer.render(scene, camera);
 };
@@ -224,6 +244,33 @@ const scheduleCubesRespawn = () => {
       }
     }
   }, 250 * 100 / CUBE_ANIMATION_SPEED)
+
+}
+
+const updateCubePhysics = (delta) => {
+  // Update physics of falling pieces
+  for (const piece of fallingPieces) {
+    // Gravity effect
+    piece.velocity.y += gravity * delta;
+
+    // Update position
+    piece.mesh.position.addScaledVector(piece.velocity, delta);
+
+    // Update rotation by angular velocity
+    piece.mesh.rotation.x += piece.angularVelocity.x * delta;
+    piece.mesh.rotation.y += piece.angularVelocity.y * delta;
+    piece.mesh.rotation.z += piece.angularVelocity.z * delta;
+
+    // Collision with ground plane
+    if (piece.mesh.position.y < groundY) {
+      piece.mesh.position.y = groundY;
+      piece.velocity.y = 0;
+      // Dampen angular velocity to simulate friction
+      piece.angularVelocity.multiplyScalar(0.7);
+      piece.velocity.x *= 0.7;
+      piece.velocity.z *= 0.7;
+    }
+  }
 
 }
 
