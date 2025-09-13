@@ -9,18 +9,22 @@ import {
   Clock,
   CylinderGeometry,
   DirectionalLight,
+  DoubleSide,
   Fog,
   HemisphereLight,
   Mesh,
   MeshBasicMaterial,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
   PCFSoftShadowMap,
   PerspectiveCamera,
   Plane,
   PlaneHelper,
   PlaneGeometry,
+  Raycaster,
   Scene,
   ShadowMaterial,
+  Vector2,
   Vector3,
   WebGLRenderer
 } from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js"; //} from "https://js13kgames.com/2025/webxr/three.module.js";
@@ -50,9 +54,13 @@ const groundY = 0.0; // ground level
 
 // TODO: FIXME: debug colors
 const pieceColors = [
-  0x1FB8CD, 0xFFC185, 0xB4413C, 0xECEBD5,
-  0x5D878F, 0xDB4545, 0xD2BA4C, 0x964325
+  0xFFC185, 0xB4413C, 0xECEBD5, 0xDB4545, 0xD2BA4C, 0x964325
 ];
+
+// const pieceColors = [
+//   0x1cbfc3, 0x1cafc3, 0x1cbcc3, 0x1c9ec3,
+// ];
+
 
 // TODO: FIXME: DEBUG
 const planehelpers = [];
@@ -60,11 +68,20 @@ let curHandPos;
 let yOffset;
 let planes = [];
 
+// Mouse emulation
+const raycaster = new Raycaster();
+const pointer = new Vector2();
+const onUpPosition = new Vector2();
+const onDownPosition = new Vector2();
+let onUpPosition3D = new Vector3();
+let onDownPosition3D = new Vector3();
+
 
 let camera, scene, renderer;
 let controller;
 const MAX_CUBES = 20;
 const CUBE_SIZE_m = 0.25;
+const CUBE_MASS_kg = 0.5 * CUBE_SIZE_m;
 const CUBE_MAX_Z_m = 3 / 2;
 const cubes = [];
 const collidableMeshList = [];
@@ -127,7 +144,7 @@ const animateCubes = (delta_s) => {
   })
 }
 
-const init = () => {
+const initScene = () => {
   scene = new Scene();
 
   scene.backgroundColor = 0x000;
@@ -152,7 +169,7 @@ const init = () => {
   // const ambientLight = new AmbientLight(0x404040);
   // scene.add(ambientLight);
 
-  const hemiLight = new HemisphereLight(0xffffff, 0xbbbbff, 3);
+  const hemiLight = new HemisphereLight(0xffffff, COLORS.MAGENTA, 3);
   hemiLight.position.set(0.5, 1, 0.25);
   scene.add(hemiLight);
 
@@ -164,7 +181,7 @@ const init = () => {
 
 }
 
-const initXR = () => {
+const initRenderer = () => {
   renderer = new WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -184,14 +201,16 @@ const initXR = () => {
   } ) );
 */
 
+
   const xrButton = XRButton.createButton(renderer, {});
   xrButton.style.backgroundColor = 'skyblue';
+  //xrButton.style.opacity = 0.0; // TODO: FIXME: sreen capture
   document.body.appendChild(xrButton);
 
-  const controls = new OrbitControls(camera, renderer.domElement);
-  // //controls.listenToKeyEvents(window); // optional
-  controls.target.set(0, 1.6, 0);
-  controls.update();
+  // const controls = new OrbitControls(camera, renderer.domElement);
+  // // //controls.listenToKeyEvents(window); // optional
+  // controls.target.set(0, 1.6, 0);
+  // controls.update();
 
   // Handle input: see THREE.js webxr_ar_cones
 
@@ -213,8 +232,8 @@ const initXR = () => {
 }
 
 
-// TODO: find alternative to wireframe (displays trinagles) and Edges Geometry only one huge quad)
-// Ideally we'd like to have quads.
+// TODO: find alternative to wireframe (displays triangles) and Edges Geometry (displays only one huge quad)
+// Ideally we'd like to have quads: see helper?
 const initFloor = () => {
 
   const PLANE_SIZE_m = CUBE_MAX_Z_m * 2;
@@ -249,7 +268,10 @@ const initCubes = () => {
 
   for (let i = 0; i < MAX_CUBES; i++) {
 
-    cubes.push(new Mesh(boxGeometry, new MeshBasicMaterial({ color: COLORS.BLUE })));
+    cubes.push(new Mesh(
+      boxGeometry,
+      new MeshPhysicalMaterial({ color: COLORS.BLUE })
+    ));
 
     const curCube = cubes[i];
     resetCube(curCube);
@@ -262,7 +284,6 @@ const initCubes = () => {
   }
 
   scheduleCubesRespawn();
-
 
 }
 
@@ -288,7 +309,7 @@ const scheduleCubesRespawn = () => {
 }
 
 
-const moveHand = () => {
+const createPlanes = () => {
   // Generate 4 parallel planes with random orientation
   // Random normal vector (unit length)
   const normal = new Vector3(
@@ -311,7 +332,10 @@ const moveHand = () => {
     normal.clone().multiplyScalar(offset).add(yOffset)
   ));
 
+  updatePlaneHelpers();
+}
 
+const updatePlaneHelpers = () => {
   planehelpers.forEach((helper) => {
     scene.remove(helper);
     helper.geometry.dispose();
@@ -326,9 +350,11 @@ const moveHand = () => {
   });
 
 }
+
+
 const sliceClosestCube = () => {
 
-  moveHand();
+  createPlanes();
 
   closestCube = null;
   cubes.forEach((c) => {
@@ -342,6 +368,7 @@ const sliceClosestCube = () => {
   // find closest cube
   sliceCube(closestCube);
 }
+
 const sliceCube = (cubeMesh) => {
   // Clear existing pieces from scene and reset
   // if (originalCube) {
@@ -368,13 +395,14 @@ const sliceCube = (cubeMesh) => {
   // Prepare breakable object (mass, velocity, angular velocity)
   const velocity = new Vector3(0, 0, 0);
   const angularVelocity = new Vector3(0, 0, 0);
-  objectBreaker.prepareBreakableObject(cubeMesh, 8, velocity, angularVelocity, true);
+  objectBreaker.prepareBreakableObject(cubeMesh, CUBE_MASS_kg, velocity, angularVelocity, true);
 
 
 
   // Use sequential cutting to slice the cube with these planes
   // Start with an array containing the single original cube
   let objectsToCut = [cubeMesh];
+
   for (const plane of planes) {
     let nextObjects = [];
     for (const obj of objectsToCut) {
@@ -409,10 +437,10 @@ const sliceCube = (cubeMesh) => {
 
     // Assign random slice color from palette
     const color = pieceColors[idx % pieceColors.length];
-    slice.material = new MeshStandardMaterial({ color: color });
+    slice.material = new MeshPhysicalMaterial({ color: color });
 
     // Prepare breakable for physics (mass 1 unit here for gravity sim)
-    const mass = CUBE_SIZE_m; // mass proportional to cube size
+    const mass = CUBE_MASS_kg; // mass proportional to cube size
     const velocity = new Vector3(
       (Math.random() - 0.5) * 0.2,
       Math.random() * 0.2,
@@ -424,7 +452,7 @@ const sliceCube = (cubeMesh) => {
       (Math.random() - 0.5) * 2,
       (Math.random() - 0.5) * 2
     );
-    objectBreaker.prepareBreakableObject(slice, mass, velocity, angularVelocity, false);
+    objectBreaker.prepareBreakableObject(slice, mass, velocity, angularVelocity, true);
 
     scene.add(slice);
 
@@ -441,8 +469,7 @@ const updateCubePhysics = (delta_s) => {
   // Update physics of falling pieces
   for (const piece of fallingPieces) {
     // Gravity effect
-    piece.velocity.y += gravity * delta_s;
-
+    piece.velocity.y += gravity * delta_s; // TODO: compute actual mass for more accuracy
 
     // Update position
     piece.mesh.position.addScaledVector(piece.velocity, delta_s);
@@ -473,11 +500,106 @@ const updateCubePhysics = (delta_s) => {
 const setupEventListeners = () => {
   window.addEventListener('resize', onWindowResize, false);
 
-  renderer.domElement.addEventListener('click', () => {
-    sliceClosestCube()
+  // renderer.domElement.addEventListener('click', () => {
+  //   sliceClosestCube()
+  // });
+
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space') {
+      sliceClosestCube()
+    }
   });
+
+
+  document.addEventListener('pointerdown', onPointerDown);
+  document.addEventListener('pointerup', onPointerUp);
+  document.addEventListener('pointermove', onPointerMove);
 }
 
+
+function onPointerDown(event) {
+
+  onDownPosition.x = event.clientX;
+  onDownPosition.y = event.clientY;
+
+}
+
+function onPointerUp(event) {
+
+  onUpPosition.x = event.clientX;
+  onUpPosition.y = event.clientY;
+
+  // if (onDownPosition.distanceTo(onUpPosition) === 0) {
+
+  //   transformControl.detach();
+  //   render();
+
+  // }
+
+  createPlanesFromPoints(onDownPosition3D, onUpPosition3D, camera.position);
+  sliceCube(closestCube);
+  closestCube = null;
+}
+
+
+
+const createPlanesFromPoints = (a, b, c) => {
+
+  // compute plane normal
+  // Generate 4 parallel planes 
+  planes = [new Plane().setFromCoplanarPoints(a, b, c)];
+
+  // Distance spacing to create slices
+  // We'll space slices evenly within the cube's bounding extent
+  const spacing = CUBE_SIZE_m / 4; // space between planes
+
+  // Calculate plane constants so planes cut through cube centered roughly on origin
+  // Starting point offset so that planes cover the cube's roughly 1 unit size along that normal
+  const offsets = [-1.5 * spacing, -0.5 * spacing, 0.5 * spacing, 1.5 * spacing];
+
+  //yOffset = new Vector3(0.0, 1.6, 0.0);
+  // planes = offsets.map(offset => new Plane().setFromNormalAndCoplanarPoint(
+  //   normal,
+  //   normal.clone().multiplyScalar(offset).add(yOffset)
+  // ));
+
+  updatePlaneHelpers();
+
+}
+
+
+
+const onPointerMove = (event) => {
+
+  pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+  pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
+
+  raycaster.setFromCamera(pointer, camera); // in 3D don't use camera but the direction of the nail
+
+  const intersects = raycaster.intersectObjects(cubes, false);
+
+  if (intersects.length > 0) {
+
+    const object = intersects[0].object;
+
+    if (object.userData.type === 'cube') {
+
+      if (!onDownPosition3D) {
+        onDownPosition3D = intersects[0].point; // start
+      }
+
+      onUpPosition3D = intersects[0].point; // current
+
+      if (!closestCube) {
+        closestCube = object;
+      }
+
+
+    }
+
+  }
+
+}
 
 function onWindowResize() {
 
@@ -490,8 +612,8 @@ function onWindowResize() {
 
 ////
 
-init();
-initXR();
+initRenderer();
+initScene();
 initFloor();
 initCubes();
 setupEventListeners();
