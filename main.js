@@ -5,6 +5,7 @@
 
 import {
   AmbientLight,
+  Box3,
   BoxGeometry,
   Clock,
   CylinderGeometry,
@@ -24,6 +25,7 @@ import {
   Raycaster,
   Scene,
   ShadowMaterial,
+  Sphere,
   Vector2,
   Vector3,
   WebGLRenderer
@@ -73,6 +75,7 @@ let planes = [];
 // Hands
 let hand0;
 let hand1;
+const hands = [];
 let claws = {};
 const handModelFactory = new XRHandModelFactory();
 
@@ -116,6 +119,8 @@ const gameLoop = () => {
   animateCubes(delta_s);
 
   // can be used in shaders: uniforms.u_time.value = elapsed;
+
+  checkHandCollisions();
 
   updateCubePhysics(delta_s);
 
@@ -546,10 +551,15 @@ function setupHands() {
   hand0 = renderer.xr.getHand(0);
   hand0.add(handModelFactory.createHandModel(hand0, 'boxes'));
   scene.add(hand0);
+  hands.push(hand0);
+
 
   hand1 = renderer.xr.getHand(1);
   hand1.add(handModelFactory.createHandModel(hand1, 'boxes'));
   scene.add(hand1);
+  hands.push(hand1);
+
+
 
   // Claws on fingertips
   //setupClaws(hand0, 'hand0');
@@ -585,6 +595,54 @@ function setupClaws(hand, handId) {
     collidableMeshList.push(claw);
     hand.add(claw);
   }
+}
+
+const TOUCH_RADIUS = 0.01;
+const POINTING_JOINT = 'index-finger-tip';
+
+function getPointerPosition(hand, pointingJoint) {
+
+  const indexFingerTip = hand.joints[pointingJoint];
+  if (indexFingerTip) {
+
+    return indexFingerTip.position;
+
+  }
+}
+
+function intersectBoxObject(hand, boxObject) {
+
+  const pointerPosition = getPointerPosition(hand, POINTING_JOINT);
+  if (pointerPosition) {
+
+    const indexSphere = new Sphere(pointerPosition, TOUCH_RADIUS);
+    const box = new Box3().setFromObject(boxObject);
+    return indexSphere.intersectsBox(box);
+
+  } else {
+
+    return false;
+
+  }
+
+}
+
+function checkHandCollisions() {
+  hands.forEach(hand => {
+
+    cubes.forEach((c) => {
+      if (hand && intersectBoxObject(hand, c)) {
+
+        sliceCube(c);
+
+        //const pressingPosition = hand.getPointerPosition();
+        //pressingDistances.push(button.surfaceY - object.worldToLocal(pressingPosition).y);
+
+      }
+    });
+
+
+  });
 }
 
 ///////
