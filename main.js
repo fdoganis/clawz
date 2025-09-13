@@ -135,7 +135,7 @@ const init = () => {
   //scene.fog = new Fog(0xffffff, 2, 10);
 
   const aspect = window.innerWidth / window.innerHeight;
-  camera = new PerspectiveCamera(75, aspect, 0.1, -CUBE_MAX_Z_m); // meters
+  camera = new PerspectiveCamera(75, aspect, 0.1, CUBE_MAX_Z_m); // meters
   camera.position.set(0, 1.6, CUBE_MAX_Z_m);
 
   // Lights
