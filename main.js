@@ -45,6 +45,8 @@ import { ConvexObjectBreaker } from './ConvexObjectBreaker.js';
 
 import { OrbitControls } from './OrbitControls'; //TODO: FIXME: DEBUG only, remove from build!
 
+import { XRHandModelFactory } from './XRHandModelFactory.js';
+
 const objectBreaker = new ConvexObjectBreaker();
 let fallingPieces = [];
 let originalCube = null;
@@ -67,6 +69,12 @@ const planehelpers = [];
 let curHandPos;
 let yOffset;
 let planes = [];
+
+// Hands
+let hand0;
+let hand1;
+let claws = {};
+const handModelFactory = new XRHandModelFactory();
 
 // Mouse emulation
 const raycaster = new Raycaster();
@@ -202,7 +210,11 @@ const initRenderer = () => {
 */
 
 
-  const xrButton = XRButton.createButton(renderer, {});
+  const sessionInit = {
+    requiredFeatures: ['hand-tracking']
+  };
+
+  const xrButton = XRButton.createButton(renderer, sessionInit);
   xrButton.style.backgroundColor = 'skyblue';
   //xrButton.style.opacity = 0.0; // TODO: FIXME: sreen capture
   document.body.appendChild(xrButton);
@@ -229,6 +241,8 @@ const initRenderer = () => {
   // controller = renderer.xr.getController(0);
   // controller.addEventListener('select', onSelect);
   // scene.add(controller);
+
+
 }
 
 
@@ -497,6 +511,85 @@ const updateCubePhysics = (delta_s) => {
 
 }
 
+
+
+const createPlanesFromPoints = (a, b, c) => {
+
+  // compute plane normal
+  // Generate 4 parallel planes 
+  planes = [new Plane().setFromCoplanarPoints(a, b, c)];
+
+  // Distance spacing to create slices
+  // We'll space slices evenly within the cube's bounding extent
+  const spacing = CUBE_SIZE_m / 4; // space between planes
+
+  // Calculate plane constants so planes cut through cube centered roughly on origin
+  // Starting point offset so that planes cover the cube's roughly 1 unit size along that normal
+  const offsets = [-1.5 * spacing, -0.5 * spacing, 0.5 * spacing, 1.5 * spacing];
+
+  //yOffset = new Vector3(0.0, 1.6, 0.0);
+  // planes = offsets.map(offset => new Plane().setFromNormalAndCoplanarPoint(
+  //   normal,
+  //   normal.clone().multiplyScalar(offset).add(yOffset)
+  // ));
+
+  updatePlaneHelpers();
+
+}
+
+////
+// Hands
+////
+
+function setupHands() {
+
+  hand0 = renderer.xr.getHand(0);
+  hand0.add(handModelFactory.createHandModel(hand0, 'boxes'));
+  scene.add(hand0);
+
+  hand1 = renderer.xr.getHand(1);
+  hand1.add(handModelFactory.createHandModel(hand1, 'boxes'));
+  scene.add(hand1);
+
+  // Claws on fingertips
+  //setupClaws(hand0, 'hand0');
+  //setupClaws(hand1, 'hand1');
+}
+
+
+function setupClaws(hand, handId) {
+  claws[handId] = {};
+
+  const clawGeometry = new THREE.CylinderGeometry(0.001, 0.003, 0.05, 6);
+  const clawMaterial = new THREE.MeshBasicMaterial({
+    color: jointName === 'index-finger-tip' ? 0xff0066 : 0x00ffff,
+    transparent: false,
+    opacity: 1.0
+  });
+
+  const jointNames = [
+    "index-finger-tip",
+    "middle-finger-tip",
+    "ring-finger-tip",
+    "pinky-finger-tip"
+  ];
+
+  for (const jointName of jointNames) {
+
+    const joint = hand.get(jointName);
+
+    const claw = new THREE.Mesh(clawGeometry, clawMaterial);
+    claw.position.set(0, 0.025, 0); // Extend from fingertip
+    claw.visible = true;
+    claws[handId][jointName] = claw;
+    collidableMeshList.push(claw);
+    hand.add(claw);
+  }
+}
+
+///////
+
+
 const setupEventListeners = () => {
   window.addEventListener('resize', onWindowResize, false);
 
@@ -542,30 +635,6 @@ function onPointerUp(event) {
 }
 
 
-
-const createPlanesFromPoints = (a, b, c) => {
-
-  // compute plane normal
-  // Generate 4 parallel planes 
-  planes = [new Plane().setFromCoplanarPoints(a, b, c)];
-
-  // Distance spacing to create slices
-  // We'll space slices evenly within the cube's bounding extent
-  const spacing = CUBE_SIZE_m / 4; // space between planes
-
-  // Calculate plane constants so planes cut through cube centered roughly on origin
-  // Starting point offset so that planes cover the cube's roughly 1 unit size along that normal
-  const offsets = [-1.5 * spacing, -0.5 * spacing, 0.5 * spacing, 1.5 * spacing];
-
-  //yOffset = new Vector3(0.0, 1.6, 0.0);
-  // planes = offsets.map(offset => new Plane().setFromNormalAndCoplanarPoint(
-  //   normal,
-  //   normal.clone().multiplyScalar(offset).add(yOffset)
-  // ));
-
-  updatePlaneHelpers();
-
-}
 
 
 
@@ -616,4 +685,5 @@ initRenderer();
 initScene();
 initFloor();
 initCubes();
+setupHands();
 setupEventListeners();
