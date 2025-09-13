@@ -9,7 +9,7 @@ import {
 	Plane,
 	Ray,
 	MathUtils
-} from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";// } from 'three'; // TODO: FIXME
+} from "https://js13kgames.com/2025/webxr/three.module.js";
 
 /**
  * Fires when the camera has been transformed by the controls.

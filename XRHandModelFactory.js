@@ -1,6 +1,6 @@
 import {
 	Object3D
-} from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js"; //} // TODO: FIXME
+} from "https://js13kgames.com/2025/webxr/three.module.js";
 
 import {
 	XRHandPrimitiveModel

@@ -6,7 +6,7 @@ import {
 	InstancedMesh,
 	Matrix4,
 	Vector3
-} from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js"; //} // TODO: FIXME
+} from "https://js13kgames.com/2025/webxr/three.module.js";
 
 const _matrix = new Matrix4();
 const _vector = new Vector3();
