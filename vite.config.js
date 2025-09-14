@@ -37,6 +37,14 @@ export default defineConfig({
         terserOptions: {
             compress: true,
             mangle: true
+        },
+        rollupOptions: {
+            external: ['three'],
+            output: {
+                paths: {
+                    three: 'https://js13kgames.com/2025/webxr/three.module.js'
+                }
+            }
         }
     }
     ,

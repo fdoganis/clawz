@@ -3,7 +3,7 @@ import {
 	Plane,
 	Triangle,
 	Vector3
-} from "https://js13kgames.com/2025/webxr/three.module.js";
+} from 'three';
 
 const Visible = 0;
 const Deleted = 1;

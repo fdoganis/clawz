@@ -3,7 +3,7 @@ import {
 	Mesh,
 	Plane,
 	Vector3
-} from "https://js13kgames.com/2025/webxr/three.module.js";
+} from 'three';
 import { ConvexGeometry } from './ConvexGeometry.js';
 
 const _v1 = new Vector3();

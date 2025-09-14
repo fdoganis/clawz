@@ -29,7 +29,7 @@ import {
   Vector2,
   Vector3,
   WebGLRenderer
-} from "https://js13kgames.com/2025/webxr/three.module.js";
+} from 'three';
 
 // TODO: FIXME: include proper link in final version
 // Oh no!!! Emulators are KO in THREE.js 179 !

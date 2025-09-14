@@ -1,7 +1,7 @@
 import {
 	BufferGeometry,
 	Float32BufferAttribute
-} from "https://js13kgames.com/2025/webxr/three.module.js";
+} from 'three';
 import { ConvexHull } from './ConvexHull.js';
 
 /**

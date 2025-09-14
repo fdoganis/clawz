@@ -1,6 +1,6 @@
 import {
 	Object3D
-} from "https://js13kgames.com/2025/webxr/three.module.js";
+} from 'three';
 
 import {
 	XRHandPrimitiveModel
