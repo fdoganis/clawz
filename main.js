@@ -13,6 +13,7 @@ import {
   DoubleSide,
   Fog,
   HemisphereLight,
+  Matrix3,
   Mesh,
   MeshBasicMaterial,
   MeshPhysicalMaterial,
@@ -45,28 +46,41 @@ import { XRButton } from './XRButton.js';
 
 import { ConvexObjectBreaker } from './ConvexObjectBreaker.js';
 
-import { OrbitControls } from './OrbitControls'; //TODO: FIXME: DEBUG only, remove from build!
+//import { OrbitControls } from './OrbitControls'; //TODO: FIXME: DEBUG only, remove from build!
 
 import { XRHandModelFactory } from './XRHandModelFactory.js';
 
+//const DEBUG_MODE = import.meta.env.DEV;
+const DEBUG_MODE = false;
+
+let camera, scene, renderer;
+let controller;
+const MAX_CUBES = 20;
+const CUBE_SIZE_m = 0.25;
+const CUBE_MASS_kg = 0.5 * CUBE_SIZE_m;
+const CUBE_MAX_Z_m = 3 / 2;
+const cubes = [];
+const collidableMeshList = [];
+
+const minSizeForBreak = CUBE_SIZE_m / 100;
 const objectBreaker = new ConvexObjectBreaker();
-let fallingPieces = [];
+let shards = [];
 let originalCube = null;
 
 const gravity = -9.81; // gravity (meters per second^2)
 const groundY = 0.0; // ground level
 
-// TODO: FIXME: debug colors
-const pieceColors = [
-  0xFFC185, 0xB4413C, 0xECEBD5, 0xDB4545, 0xD2BA4C, 0x964325
-];
+// Palette inspired by Takenobu Igarashi
+const COLORS = {
+  RED: 0xc84231,
+  GREEN: 0x7cbc70,
+  BLUE: 0x1c9ec3,
+  MAGENTA: 0xae4c9d,
+  YELLOW: 0xfcc245
+};
 
-// const pieceColors = [
-//   0x1cbfc3, 0x1cafc3, 0x1cbcc3, 0x1c9ec3,
-// ];
+const pieceColors = [0xFFC185, 0xB4413C, 0xECEBD5, 0xDB4545, 0xD2BA4C, 0x964325];
 
-
-// TODO: FIXME: DEBUG
 const planehelpers = [];
 let curHandPos;
 let yOffset;
@@ -86,27 +100,14 @@ const onUpPosition = new Vector2();
 const onDownPosition = new Vector2();
 let onUpPosition3D = new Vector3();
 let onDownPosition3D = new Vector3();
-
-
-let camera, scene, renderer;
-let controller;
-const MAX_CUBES = 20;
-const CUBE_SIZE_m = 0.25;
-const CUBE_MASS_kg = 0.5 * CUBE_SIZE_m;
-const CUBE_MAX_Z_m = 3 / 2;
-const cubes = [];
-const collidableMeshList = [];
+let onDownPosition3DNormal = new Vector3();
+let cutStart;
+let cutEnd;
+let debugCube;
+let isPointerDown = false;
 
 let closestCube;
-
-// Palette inspired by Takenobu Igarashi
-var COLORS = {
-  RED: 0xc84231,
-  GREEN: 0x7cbc70,
-  BLUE: 0x1c9ec3,
-  MAGENTA: 0xae4c9d,
-  YELLOW: 0xfcc245
-};
+let cubeToCut;
 
 const clock = new Clock();
 
@@ -116,11 +117,17 @@ const gameLoop = () => {
   const delta_s = clock.getDelta();
   const elapsed = clock.getElapsedTime();
 
+  if (_cubeAnimation) {
   animateCubes(delta_s);
-
+  }
   // can be used in shaders: uniforms.u_time.value = elapsed;
 
-  checkHandCollisions();
+  //updateClaws();
+
+  //updateTrails();
+
+  // TODO: FIXME
+  //checkHandCollisions();
 
   updateCubePhysics(delta_s);
 
@@ -165,7 +172,7 @@ const initScene = () => {
   //scene.fog = new Fog(0xffffff, 2, 10);
 
   const aspect = window.innerWidth / window.innerHeight;
-  camera = new PerspectiveCamera(75, aspect, 0.1, CUBE_MAX_Z_m); // meters
+  camera = new PerspectiveCamera(75, aspect, 0.1, 4 * CUBE_MAX_Z_m); // meters
   camera.position.set(0, 1.6, CUBE_MAX_Z_m);
 
   // Lights
@@ -187,10 +194,26 @@ const initScene = () => {
   scene.add(hemiLight);
 
 
-  // TODO: FIXME: DEBUG
+
   const origin = new Mesh(new BoxGeometry(CUBE_SIZE_m / 2, CUBE_SIZE_m / 2, CUBE_SIZE_m / 2),
     new MeshBasicMaterial({ color: 0xffffff }));
-  scene.add(origin);
+  if (DEBUG_MODE) { scene.add(origin); }
+
+  cutStart = new Mesh(new BoxGeometry(CUBE_SIZE_m / 8, CUBE_SIZE_m / 8, CUBE_SIZE_m / 8),
+    new MeshBasicMaterial({ color: 0xff0000 }));
+  if (DEBUG_MODE) { scene.add(cutStart); }
+
+  cutEnd = new Mesh(new BoxGeometry(CUBE_SIZE_m / 8, CUBE_SIZE_m / 8, CUBE_SIZE_m / 8),
+    new MeshBasicMaterial({ color: 0x00ff00 }));
+  if (DEBUG_MODE) { scene.add(cutEnd); }
+
+  debugCube = new Mesh(new BoxGeometry(CUBE_SIZE_m * 10, CUBE_SIZE_m * 10, CUBE_SIZE_m * 10),
+    new MeshBasicMaterial({ color: 0x0000ff }));
+  debugCube.position.z = - CUBE_SIZE_m * 15;
+  debugCube.userData.type = 'cube';
+  //if (DEBUG_MODE) { scene.add(debugCube); }
+
+
 
 }
 
@@ -221,7 +244,7 @@ const initRenderer = () => {
 
   const xrButton = XRButton.createButton(renderer, sessionInit);
   xrButton.style.backgroundColor = 'skyblue';
-  //xrButton.style.opacity = 0.0; // TODO: FIXME: sreen capture
+  //xrButton.style.opacity = 0.0; // TODO: set opacity to zero for sreen capture
   document.body.appendChild(xrButton);
 
   // const controls = new OrbitControls(camera, renderer.domElement);
@@ -363,7 +386,7 @@ const updatePlaneHelpers = () => {
   });
 
   planes.forEach((plane) => {
-    const helper = new PlaneHelper(plane, 1, 0xffff00);
+    const helper = new PlaneHelper(plane, CUBE_SIZE_m * 2, 0xffff00);
     planehelpers.push(helper);
     scene.add(helper);
   });
@@ -371,43 +394,23 @@ const updatePlaneHelpers = () => {
 }
 
 
-const sliceClosestCube = () => {
-
-  createPlanes();
-
-  closestCube = null;
-  cubes.forEach((c) => {
-    if (!closestCube) { closestCube = c }
-    else {
-      if (c.position.distanceTo(yOffset) < closestCube.position.distanceTo(yOffset)) {
-        closestCube = c;
-      }
-    }
-  });
-  // find closest cube
-  sliceCube(closestCube);
-}
-
-const sliceCube = (cubeMesh) => {
-  // Clear existing pieces from scene and reset
-  // if (originalCube) {
-  //   scene.remove(originalCube);
-  //   originalCube.geometry.dispose();
-  //   originalCube.material.dispose();
-  //   originalCube = null;
-  // }
-
-  // if (originalCube) {
-  //   resetCube(originalCube);
-  // }
-
-  for (const piece of fallingPieces) {
-    scene.remove(piece.mesh);
-    piece.mesh.geometry.dispose();
-    piece.mesh.material.dispose();
+const cleanShards = () => {
+  for (const shard of shards) {
+    scene.remove(shard.mesh);
+    shard.mesh.geometry.dispose();
+    shard.mesh.material.dispose();
   }
 
-  fallingPieces = [];
+  shards = [];
+
+}
+
+const sliceCube = (cubeMesh, planes) => {
+
+  if (!cubeMesh) { return; }
+
+
+  cleanShards();
 
   // originalCube = cubeMesh;
 
@@ -428,10 +431,8 @@ const sliceCube = (cubeMesh) => {
       let result = { object1: null, object2: null };
       let cutCount = objectBreaker.cutByPlane(obj, plane, result);
       if (cutCount === 2) {
-        // Remove original before slicing
-        scene.remove(obj);
-        obj.geometry.dispose();
-        obj.material.dispose();
+        // Reset original before slicing
+        resetCube(obj);
 
         // Add both pieces to next stage
         if (result.object1) nextObjects.push(result.object1);
@@ -450,7 +451,8 @@ const sliceCube = (cubeMesh) => {
   // originalCube = null;
 
   // Add slices to scene, setup physics params for animation
-  objectsToCut.forEach((slice, idx) => {
+  objectsToCut.forEach((/** @type Mesh*/ slice, idx) => {
+
     slice.castShadow = true;
     slice.receiveShadow = true;
 
@@ -458,25 +460,34 @@ const sliceCube = (cubeMesh) => {
     const color = pieceColors[idx % pieceColors.length];
     slice.material = new MeshPhysicalMaterial({ color: color });
 
-    // Prepare breakable for physics (mass 1 unit here for gravity sim)
-    const mass = CUBE_MASS_kg; // mass proportional to cube size
-    const velocity = new Vector3(
-      (Math.random() - 0.5) * 0.2,
-      Math.random() * 0.2,
-      (Math.random() - 0.5) * 0.2
-    );
+    // Prepare breakable for physics 
+    slice.geometry.computeBoundingBox();
+    const sliceSize = new Vector3();
+    slice.geometry.boundingBox.getSize(sliceSize);
 
-    const angularVelocity = new Vector3(
-      (Math.random() - 0.5) * 2,
-      (Math.random() - 0.5) * 2,
-      (Math.random() - 0.5) * 2
-    );
+    const mass = CUBE_MASS_kg / sliceSize.x * sliceSize.y * sliceSize.z; // mass proportional to cube size
+
+    const p_0 = onDownPosition3D; // cutStart
+    const v_01 = onUpPosition3D.clone().sub(p_0);  // cutEnd - cutStart
+    const cutLength = v_01.length();
+
+    const v_02 = onDownPosition3DNormal.clone(); // normal to the face at cutStart
+
+    const velocityScale = mass * 100;
+    const sign = v_01.normalize().cross(v_02.normalize()).z < 0 ? -1 : 1;
+    const cutScale = Math.min(cutLength, CUBE_SIZE_m * 2);
+    const velocity = planes[0].normal.clone().multiplyScalar(-sign * cutScale * velocityScale); // use slicing direction and length for best effect
+
+    const angularVelocityScale = mass * 100;
+    const angularVelocity = planes[0].normal.clone().multiplyScalar(-cutScale * angularVelocityScale);
+
+
     objectBreaker.prepareBreakableObject(slice, mass, velocity, angularVelocity, true);
 
     scene.add(slice);
 
     // Store physics state per piece
-    fallingPieces.push({
+    shards.push({
       mesh: slice,
       velocity: velocity,
       angularVelocity: angularVelocity,
@@ -484,61 +495,101 @@ const sliceCube = (cubeMesh) => {
   });
 }
 
+let groundHit = false;
 const updateCubePhysics = (delta_s) => {
   // Update physics of falling pieces
-  for (const piece of fallingPieces) {
+  for (const shard of shards) {
     // Gravity effect
-    piece.velocity.y += gravity * delta_s; // TODO: compute actual mass for more accuracy
+    shard.velocity.y += gravity * delta_s;
 
     // Update position
-    piece.mesh.position.addScaledVector(piece.velocity, delta_s);
+    shard.mesh.position.addScaledVector(shard.velocity, delta_s);
 
-    if (piece.mesh.position.y > groundY) {
-      piece.mesh.position.z += CUBE_SPEED_mps * delta_s;
+    if (shard.mesh.position.y > groundY) {
+      shard.mesh.position.z += CUBE_SPEED_mps * delta_s;
     }
 
     // Update rotation by angular velocity
-    piece.mesh.rotation.x += piece.angularVelocity.x * delta_s;
-    piece.mesh.rotation.y += piece.angularVelocity.y * delta_s;
-    piece.mesh.rotation.z += piece.angularVelocity.z * delta_s;
+    shard.mesh.rotation.x += shard.angularVelocity.x * delta_s;
+    shard.mesh.rotation.y += shard.angularVelocity.y * delta_s;
+    shard.mesh.rotation.z += shard.angularVelocity.z * delta_s;
 
     // Collision with ground plane
-    if (piece.mesh.position.y < groundY) {
-      piece.mesh.position.y = groundY;
-      piece.velocity.y = 0;
+    if (shard.mesh.position.y < groundY) {
+      shard.mesh.position.y = groundY;
+      shard.velocity.y = 0;
 
       // Dampen angular velocity to simulate friction
-      piece.angularVelocity.multiplyScalar(0.7);
-      piece.velocity.x *= 0.7;
-      piece.velocity.z *= 0.7;
+      shard.angularVelocity.multiplyScalar(0.7);
+      shard.velocity.x *= 0.7;
+      shard.velocity.z *= 0.7;
+
+      groundHit = true;
     }
+
+
+    // TODO: split shards using subdivideByImpact when they hit the ground?
+    // function getCenterPoint(mesh) {
+    //   var geometry = mesh.geometry;
+    //   geometry.computeBoundingBox();
+    //   var center = new Vector3();
+    //   geometry.boundingBox.getCenter(center);
+    //   mesh.localToWorld(center);
+    //   return center;
+    // }
+
+    // const n = new Vector3(0, 1, 0);
+    // const shards = objectBreaker.subdivideByImpact(
+    //   shard.mesh,
+    //   getCenterPoint(shard.mesh),
+    //   n.multiplyScalar(10),
+    //   1,
+    //   0
+    // )
+
+
+
+  }
+
+  if (groundHit) {
+    cleanShards();
+    groundHit = false;
   }
 
 }
 
 
 
+
+
 const createPlanesFromPoints = (a, b, c) => {
 
-  // compute plane normal
-  // Generate 4 parallel planes 
-  planes = [new Plane().setFromCoplanarPoints(a, b, c)];
+  if (!a || !b || !c) { return; }
 
-  // Distance spacing to create slices
-  // We'll space slices evenly within the cube's bounding extent
+  const plane = new Plane().setFromCoplanarPoints(a, b, c);
+
+  // compute plane normal
+  const normal = plane.normal;
+
+  normal.normalize();
+
+  // space between slices
   const spacing = CUBE_SIZE_m / 4; // space between planes
 
-  // Calculate plane constants so planes cut through cube centered roughly on origin
-  // Starting point offset so that planes cover the cube's roughly 1 unit size along that normal
+
+  // Create parallel planes by offsetting points a and b (start and end of cut) while keeping c (camera / wrist / shoulder) constant
   const offsets = [-1.5 * spacing, -0.5 * spacing, 0.5 * spacing, 1.5 * spacing];
 
-  //yOffset = new Vector3(0.0, 1.6, 0.0);
-  // planes = offsets.map(offset => new Plane().setFromNormalAndCoplanarPoint(
-  //   normal,
-  //   normal.clone().multiplyScalar(offset).add(yOffset)
-  // ));
 
-  updatePlaneHelpers();
+  planes = offsets.map(offset => new Plane().setFromCoplanarPoints(
+    a.clone().add(normal.clone().multiplyScalar(offset)),
+    b.clone().add(normal.clone().multiplyScalar(offset)),
+    c
+  ));
+
+  //planes = [plane];
+
+  //updatePlaneHelpers();
 
 }
 
@@ -647,19 +698,23 @@ function checkHandCollisions() {
 
 ///////
 
+let _cubeAnimation = true;
+const toggleCubeAnimation = () => {
+  _cubeAnimation = !_cubeAnimation;
+}
 
 const setupEventListeners = () => {
   window.addEventListener('resize', onWindowResize, false);
 
-  // renderer.domElement.addEventListener('click', () => {
-  //   sliceClosestCube()
-  // });
 
+  if (true) {
   window.addEventListener('keydown', e => {
+
     if (e.code === 'Space') {
-      sliceClosestCube()
+        toggleCubeAnimation();
     }
   });
+  }
 
 
   document.addEventListener('pointerdown', onPointerDown);
@@ -673,54 +728,76 @@ function onPointerDown(event) {
   onDownPosition.x = event.clientX;
   onDownPosition.y = event.clientY;
 
+  onDownPosition3D = null;
+  onDownPosition3DNormal = null;
+  isPointerDown = true;
+
 }
 
 function onPointerUp(event) {
 
+  isPointerDown = false;
+
   onUpPosition.x = event.clientX;
   onUpPosition.y = event.clientY;
 
-  // if (onDownPosition.distanceTo(onUpPosition) === 0) {
-
-  //   transformControl.detach();
-  //   render();
-
-  // }
+  cutEnd.position.set(onUpPosition3D.x, onUpPosition3D.y, onUpPosition3D.z);
 
   createPlanesFromPoints(onDownPosition3D, onUpPosition3D, camera.position);
-  sliceCube(closestCube);
-  closestCube = null;
+  sliceCube(cubeToCut, planes);
+
+  cubeToCut = null;
 }
 
 
 
+// inspired by VertexNormalsHelper
+const _normalMatrix = new Matrix3();
+const getWorldNormal = (object, position_W, normal) => {
+
+  const normal_W = normal.clone();
+
+  object.updateMatrixWorld(true);
+
+  _normalMatrix.getNormalMatrix(object.matrixWorld);
+
+  normal_W.applyMatrix3(_normalMatrix).normalize().add(position_W);
+
+
+  return normal_W;
+};
 
 
 const onPointerMove = (event) => {
+
+  if (!isPointerDown) { return; }
 
   pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
   pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
 
   raycaster.setFromCamera(pointer, camera); // in 3D don't use camera but the direction of the nail
 
+  //const intersects = raycaster.intersectObjects([...cubes, debugCube], false);
   const intersects = raycaster.intersectObjects(cubes, false);
-
   if (intersects.length > 0) {
 
     const object = intersects[0].object;
 
-    if (object.userData.type === 'cube') {
+    if (object && object.userData.type === 'cube') {
 
       if (!onDownPosition3D) {
         onDownPosition3D = intersects[0].point; // start
+
+        intersects[0].object.updateMatrixWorld(true);
+
+        onDownPosition3DNormal = getWorldNormal(intersects[0].object, onDownPosition3D, intersects[0].normal);
+        cutStart.position.set(onDownPosition3D.x, onDownPosition3D.y, onDownPosition3D.z);
+
       }
 
       onUpPosition3D = intersects[0].point; // current
 
-      if (!closestCube) {
-        closestCube = object;
-      }
-
+      cubeToCut = object;
 
     }
 
