@@ -239,7 +239,7 @@ const initRenderer = () => {
 
 
   const sessionInit = {
-    requiredFeatures: ['hand-tracking']
+    'optionalFeatures': ['hand-tracking']
   };
 
   const xrButton = XRButton.createButton(renderer, sessionInit);
@@ -386,12 +386,13 @@ const updatePlaneHelpers = () => {
 
 const cleanShards = () => {
   for (const shard of shards) {
-    scene.remove(shard.mesh);
+    if (shard)
+      scene.remove(shard.mesh);
     shard.mesh.geometry.dispose();
     shard.mesh.material.dispose();
   }
 
-  shards = [];
+  //shards = [];
 
 }
 
