@@ -481,69 +481,74 @@ const sliceCube = (cubeMesh, planes) => {
       mesh: slice,
       velocity: velocity,
       angularVelocity: angularVelocity,
+      active: true
     });
   });
 }
 
-let groundHit = false;
 const updateCubePhysics = (delta_s) => {
   // Update physics of falling pieces
   for (const shard of shards) {
-    // Gravity effect
-    shard.velocity.y += gravity * delta_s;
 
-    // Update position
-    shard.mesh.position.addScaledVector(shard.velocity, delta_s);
+    if (shard.active) {
+      // Gravity effect
+      shard.velocity.y += gravity * delta_s;
 
-    if (shard.mesh.position.y > groundY) {
-      shard.mesh.position.z += CUBE_SPEED_mps * delta_s;
+      // Update position
+      shard.mesh.position.addScaledVector(shard.velocity, delta_s);
+
+      if (shard.mesh.position.y > groundY) {
+        shard.mesh.position.z += CUBE_SPEED_mps * delta_s;
+      }
+
+      // Update rotation by angular velocity
+      shard.mesh.rotation.x += shard.angularVelocity.x * delta_s;
+      shard.mesh.rotation.y += shard.angularVelocity.y * delta_s;
+      shard.mesh.rotation.z += shard.angularVelocity.z * delta_s;
+
+      // Collision with ground plane
+      if (shard.mesh.position.y < groundY) {
+        shard.mesh.position.y = groundY;
+        shard.velocity.y = 0;
+
+        // Dampen angular velocity to simulate friction
+        shard.angularVelocity.multiplyScalar(0.7);
+        shard.velocity.x *= 0.7;
+        shard.velocity.z *= 0.7;
+
+
+        shard.active = false;
+        shard.mesh.visible = false;
+      }
+
+
+      // TODO: split shards using subdivideByImpact when they hit the ground?
+      // function getCenterPoint(mesh) {
+      //   var geometry = mesh.geometry;
+      //   geometry.computeBoundingBox();
+      //   var center = new Vector3();
+      //   geometry.boundingBox.getCenter(center);
+      //   mesh.localToWorld(center);
+      //   return center;
+      // }
+
+      // const n = new Vector3(0, 1, 0);
+      // const shards = objectBreaker.subdivideByImpact(
+      //   shard.mesh,
+      //   getCenterPoint(shard.mesh),
+      //   n.multiplyScalar(10),
+      //   1,
+      //   0
+      // )
+
+
+
     }
-
-    // Update rotation by angular velocity
-    shard.mesh.rotation.x += shard.angularVelocity.x * delta_s;
-    shard.mesh.rotation.y += shard.angularVelocity.y * delta_s;
-    shard.mesh.rotation.z += shard.angularVelocity.z * delta_s;
-
-    // Collision with ground plane
-    if (shard.mesh.position.y < groundY) {
-      shard.mesh.position.y = groundY;
-      shard.velocity.y = 0;
-
-      // Dampen angular velocity to simulate friction
-      shard.angularVelocity.multiplyScalar(0.7);
-      shard.velocity.x *= 0.7;
-      shard.velocity.z *= 0.7;
-
-      groundHit = true;
-    }
-
-
-    // TODO: split shards using subdivideByImpact when they hit the ground?
-    // function getCenterPoint(mesh) {
-    //   var geometry = mesh.geometry;
-    //   geometry.computeBoundingBox();
-    //   var center = new Vector3();
-    //   geometry.boundingBox.getCenter(center);
-    //   mesh.localToWorld(center);
-    //   return center;
-    // }
-
-    // const n = new Vector3(0, 1, 0);
-    // const shards = objectBreaker.subdivideByImpact(
-    //   shard.mesh,
-    //   getCenterPoint(shard.mesh),
-    //   n.multiplyScalar(10),
-    //   1,
-    //   0
-    // )
-
-
-
   }
 
-  if (groundHit) {
+  const activeShards = shards.map((shard) => (shard.active));
+  if (activeShards.every((val) => (val == false))) {
     cleanShards();
-    groundHit = false;
   }
 
 }
