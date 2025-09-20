@@ -118,7 +118,7 @@ const gameLoop = () => {
   const elapsed = clock.getElapsedTime();
 
   if (_cubeAnimation) {
-  animateCubes(delta_s);
+    animateCubes(delta_s);
   }
   // can be used in shaders: uniforms.u_time.value = elapsed;
 
@@ -351,27 +351,17 @@ const scheduleCubesRespawn = () => {
 }
 
 
-const createPlanes = () => {
-  // Generate 4 parallel planes with random orientation
-  // Random normal vector (unit length)
+const createPlaneAtPosition = (position) => {
+
   const normal = new Vector3(
-    Math.random() - 0.5,
-    Math.random() - 0.5,
-    Math.random() - 0.5
-  ).normalize();
+    0.0,
+    1.0,
+    0.0
+  );
 
-  // Distance spacing to create slices
-  // We'll space slices evenly within the cube's bounding extent
-  const spacing = CUBE_SIZE_m / 4; // space between planes
-
-  // Calculate plane constants so planes cut through cube centered roughly on origin
-  // Starting point offset so that planes cover the cube's roughly 1 unit size along that normal
-  const offsets = [-1.5 * spacing, -0.5 * spacing, 0.5 * spacing, 1.5 * spacing];
-
-  yOffset = new Vector3(0.0, 1.6, 0.0);
-  planes = offsets.map(offset => new Plane().setFromNormalAndCoplanarPoint(
+  planes.push(new Plane().setFromNormalAndCoplanarPoint(
     normal,
-    normal.clone().multiplyScalar(offset).add(yOffset)
+    position
   ));
 
   updatePlaneHelpers();
@@ -415,7 +405,7 @@ const sliceCube = (cubeMesh, planes) => {
   // originalCube = cubeMesh;
 
   // Prepare breakable object (mass, velocity, angular velocity)
-  const velocity = new Vector3(0, 0, 0);
+  const velocity = new Vector3(0, 0, CUBE_SPEED_mps); // TODO: add cube velocity here instead of adding it in updateCubePhysics?
   const angularVelocity = new Vector3(0, 0, 0);
   objectBreaker.prepareBreakableObject(cubeMesh, CUBE_MASS_kg, velocity, angularVelocity, true);
 
@@ -574,7 +564,7 @@ const createPlanesFromPoints = (a, b, c) => {
   normal.normalize();
 
   // space between slices
-  const spacing = CUBE_SIZE_m / 4; // space between planes
+  const spacing = CUBE_SIZE_m / 4; // space between planes 
 
 
   // Create parallel planes by offsetting points a and b (start and end of cut) while keeping c (camera / wrist / shoulder) constant
@@ -597,6 +587,28 @@ const createPlanesFromPoints = (a, b, c) => {
 // Hands
 ////
 
+//
+// scene
+//  |
+//  +- hand : Group representing the hand space of the WebXR Controller (XRHand)
+//      |   +- this.joints : array with the WebXR joints
+//      | 
+//      +- handModel : XRHandModel created by XRHandModelFactory
+//      |   +- this.controller : hand 
+//      |   +- his.envMap : null
+//      |   +- this.mesh : handMesh
+//      |   +- this.motionController : XRHandPrimitiveModel created by XRHandModelFactory
+//      |            +- this.controller : hand
+//      |            +- this.handModel : handModel
+//      |            +- this.handMesh : handMesh
+//      |            +- this.envMap : null
+//      |            +- this.joints : array with the name of the joints using WebXR naming for easy access
+//      |
+//      +- handMesh : InstancedMesh containing all the joints, created by XRHandPrimitiveModel and added to SceneGraph by HandModel
+//
+
+
+
 function setupHands() {
 
   hand0 = renderer.xr.getHand(0);
@@ -613,53 +625,172 @@ function setupHands() {
 
 
   // Claws on fingertips
-  //setupClaws(hand0, 'hand0');
-  //setupClaws(hand1, 'hand1');
+  setupClaws(hand0, 'hand0');
+  setupClaws(hand1, 'hand1');
 }
+
+
+const fingertipNames = [
+  "index-finger-tip",
+  "middle-finger-tip",
+  "ring-finger-tip",
+  "pinky-finger-tip"
+];
 
 
 function setupClaws(hand, handId) {
-  claws[handId] = {};
+  claws[handId] = [];
 
-  const clawGeometry = new THREE.CylinderGeometry(0.001, 0.003, 0.05, 6);
-  const clawMaterial = new THREE.MeshBasicMaterial({
-    color: jointName === 'index-finger-tip' ? 0xff0066 : 0x00ffff,
-    transparent: false,
-    opacity: 1.0
-  });
+  const clawGeometry = new CylinderGeometry(0.01, 0.03, 0.5, 4);
 
-  const jointNames = [
-    "index-finger-tip",
-    "middle-finger-tip",
-    "ring-finger-tip",
-    "pinky-finger-tip"
-  ];
 
-  for (const jointName of jointNames) {
+  for (const jointName of fingertipNames) {
 
-    const joint = hand.get(jointName);
+    const joint = hand.joints[jointName];
 
-    const claw = new THREE.Mesh(clawGeometry, clawMaterial);
-    claw.position.set(0, 0.025, 0); // Extend from fingertip
-    claw.visible = true;
+    const clawMaterial = new MeshBasicMaterial({
+      color: jointName === 'index-finger-tip' ? 0xff0066 : 0x00ffff,
+      transparent: false,
+      opacity: 1.0
+    });
+
+    const claw = new Mesh(clawGeometry, clawMaterial);
+    //claw.position.set(0, 0.025, 0); // Extend from fingertip
+    claw.visible = false;
     claws[handId][jointName] = claw;
     collidableMeshList.push(claw);
-    hand.add(claw);
+    scene.add(claw); // adding to scene, we'll be using global transformations
   }
 }
+
+const trail = [];
+let tIdx = 0;
+const MAX_TRAIL_POINTS = 50;
+function setupTrails() {
+  for (tIdx = 0; tIdx < MAX_TRAIL_POINTS; tIdx++) {
+
+    var geometry = new BoxGeometry(0.005, 0.005, 0.005);
+    trail[tIdx] = new Mesh(geometry, new MeshBasicMaterial({ color: COLORS.RED }));
+    trail[tIdx].material.wireframe = true;
+    trail[tIdx].position.x = 0;
+    trail[tIdx].position.y = 0;
+    trail[tIdx].position.z = 0;
+    scene.add(trail[tIdx]);
+
+  }
+
+  tIdx = 0;
+
+
+}
+
+function isEmpty(obj) {
+  for (const i in obj) return false;
+  return true;
+
+}
+
+function updateTrails() {
+
+  if (isEmpty(hand1.joints)) { return; }
+
+  trail[tIdx % MAX_TRAIL_POINTS].position.x = hand1.joints['index-finger-tip'].position.x;
+  trail[tIdx % MAX_TRAIL_POINTS].position.y = hand1.joints['index-finger-tip'].position.y;
+  trail[tIdx % MAX_TRAIL_POINTS].position.z = hand1.joints['index-finger-tip'].position.z;
+
+  trail[tIdx % MAX_TRAIL_POINTS].quaternion.x = hand1.joints['index-finger-tip'].quaternion.x;
+  trail[tIdx % MAX_TRAIL_POINTS].quaternion.y = hand1.joints['index-finger-tip'].quaternion.y;
+  trail[tIdx % MAX_TRAIL_POINTS].quaternion.z = hand1.joints['index-finger-tip'].quaternion.z;
+  trail[tIdx % MAX_TRAIL_POINTS].quaternion.w = hand1.joints['index-finger-tip'].quaternion.w;
+
+  tIdx++;
+
+}
+
+
+
+function updateClaws() {
+
+  [[hand0, 'hand0'], [hand1, 'hand1']].forEach((hand, handId) => {
+
+    for (const jointName of fingertipNames) {
+
+      if (!isEmpty(hand.joints)) {
+        const joint = hand.joints[jointName];
+
+        const claw = claws[handId][jointName];
+        claw.position.set(joint.position.x, joint.position.y, joint.position.z); // Extend from fingertip
+        claw.visible = true;
+      }
+    }
+
+  });
+}
+
 
 const TOUCH_RADIUS = 0.01;
 const POINTING_JOINT = 'index-finger-tip';
 
 function getPointerPosition(hand, pointingJoint) {
 
-  const indexFingerTip = hand.joints[pointingJoint];
-  if (indexFingerTip) {
+  const pointer = hand.joints[pointingJoint];
+  if (pointer) {
 
-    return indexFingerTip.position;
+    return pointer.position;
 
   }
 }
+
+// function computePlanes(hand) {
+
+//   const joints = hand.joints;
+
+//   let count = 0;
+
+//   for (let i = 0; i < joints.length; i++) {
+
+//     const joint = joints[i];
+
+//     if (joint?.visible) {
+
+//       // _vector.setScalar(joint.jointRadius || defaultRadius);
+//       // _matrix.compose(joint.position, joint.quaternion, _vector);
+//       // this.handMesh.setMatrixAt(i, _matrix);
+
+//       // count++;
+
+//     }
+
+//   }
+//   createPlanes();
+
+//   return planes;
+// }
+
+
+function computePlanes(hand) {
+
+  const joints = hand.joints;
+
+  let count = 0;
+
+  for (const fingertip in fingertipNames) {
+
+    const joint = joints[fingertip];
+
+    if (joint?.visible) {
+
+
+      createPlaneAtPosition(getPointerPosition(hand, joint));
+
+    }
+
+  }
+
+
+  return planes;
+}
+
 
 function intersectBoxObject(hand, boxObject) {
 
@@ -679,21 +810,50 @@ function intersectBoxObject(hand, boxObject) {
 }
 
 function checkHandCollisions() {
+
+  if (!hands.length) { return; }
+
   hands.forEach(hand => {
 
-    cubes.forEach((c) => {
-      if (hand && intersectBoxObject(hand, c)) {
+    if (hand) {
 
-        sliceCube(c);
+      cubes.forEach((c) => {
 
-        //const pressingPosition = hand.getPointerPosition();
-        //pressingDistances.push(button.surfaceY - object.worldToLocal(pressingPosition).y);
+        // Find out which state we are in according to previous values of down and up
 
-      }
-    });
+        if (intersectBoxObject(hand, c)) { // if collision
+
+          if (!isPointerDown) {
+            // cutStart
+            onDownPosition3D = getPointerPosition(hand, POINTING_JOINT);
+            //onUpPosition = null; // TODO: CHECK: should be put to null?
+            isPointerDown = true;
+          }
+
+          // cutMove
+          onUpPosition3D = getPointerPosition(hand, POINTING_JOINT);
+
+        }
+        else { // no collision
+          if (isPointerDown) {
+            // cutEnd
+
+            // TODO: FIXME
+            // const clawPlanes = computePlanes(hand);
+            // sliceCube(c, clawPlanes);
 
 
+            createPlanesFromPoints(onDownPosition3D, onUpPosition3D, camera.position);
+            sliceCube(c, planes);
+
+            isPointerDown = false;
+          }
+
+        }
+      });
+    }
   });
+
 }
 
 ///////
@@ -708,12 +868,12 @@ const setupEventListeners = () => {
 
 
   if (true) {
-  window.addEventListener('keydown', e => {
+    window.addEventListener('keydown', e => {
 
-    if (e.code === 'Space') {
+      if (e.code === 'Space') {
         toggleCubeAnimation();
-    }
-  });
+      }
+    });
   }
 
 
@@ -821,4 +981,5 @@ initScene();
 initFloor();
 initCubes();
 setupHands();
+setupTrails();
 setupEventListeners();
