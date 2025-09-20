@@ -12,6 +12,7 @@ import {
   DirectionalLight,
   DoubleSide,
   Fog,
+  GridHelper,
   HemisphereLight,
   Matrix3,
   Mesh,
@@ -280,14 +281,10 @@ const initFloor = () => {
 
   const PLANE_SIZE_m = CUBE_MAX_Z_m * 2;
 
-  const floor = new Mesh(
-    new PlaneGeometry(PLANE_SIZE_m, PLANE_SIZE_m, 10 * PLANE_SIZE_m, 10 * PLANE_SIZE_m),
-    new MeshBasicMaterial({
-      color: COLORS.MAGENTA,
-      wireframe: true
-    })
-  );
-  floor.rotation.x = Math.PI / -2;
+  const divisions = 10;
+
+  const floor = new GridHelper(PLANE_SIZE_m, divisions, COLORS.MAGENTA, COLORS.MAGENTA);
+
   floor.position.y = groundY - 0.001;
 
   scene.add(floor);
